@@ -1,7 +1,7 @@
 Hi ![](https://user-images.githubusercontent.com/18350557/176309783-0785949b-9127-417c-8b55-ab5a4333674e.gif)My name is Brandon Dauria
 ======================================================================================================================================
 
-Frontend Engineer
+Backend Engineer
 -----------------
 
 I am a recent graduate from Boston University with a major in Computer Science. Passionate about technology and innovation, I have honed skills in software development, problem-solving, and teamwork. With a strong foundation in programming languages and a keen interest in frontend development, I am eager to leverage his education and experience to contribute to cutting-edge projects and dynamic teams.
