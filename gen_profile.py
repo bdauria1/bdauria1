@@ -8,11 +8,30 @@ from PIL import Image, ImageFilter
 
 FONT = "'Cascadia Code','SFMono-Regular',Consolas,'DejaVu Sans Mono','Liberation Mono',Menlo,monospace"
 PAD = 26
-ART_COLS, ART_FS, ART_CW, ART_LH = 120, 8, 4.8, 9.0
+ART_COLS, ART_FS, ART_CW, ART_LH = 84, 8, 4.8, 9.0
+INFO_COLS, INFO_FS, INFO_CW, INFO_LH = 50, 13, 7.8, 21.0
+GAP = 34
+
+INFO = [
+    "# bdauria1@github",
+    ("OS", "Windows"),
+    ("Host", "Boston, MA"),
+    ("Kernel", "Software Engineer"),
+    ("IDE", "Visual Studio Code"),
+    None,
+    ("Languages.Programming", "Python, TypeScript, SAS"),
+    ("Languages.Infra", "Terraform, Kubernetes"),
+    ("Cloud", "AWS"),
+    ("Homelab", "Proxmox"),
+    None,
+    "# Contact",
+    ("Website", "bdauria1.github.io"),
+    ("LinkedIn", "in/bdauria"),
+]
 
 THEMES = {
-    "dark": dict(card="#161b22", border="#30363d"),
-    "light": dict(card="#f6f8fa", border="#d0d7de"),
+    "dark": dict(card="#161b22", border="#30363d", fg="#e6edf3", muted="#6e7681", key="#ffa657", head="#58a6ff"),
+    "light": dict(card="#f6f8fa", border="#d0d7de", fg="#1f2328", muted="#8c959f", key="#bc4c00", head="#0969da"),
 }
 
 RAMP = " .:-=+*#%@"
@@ -71,7 +90,7 @@ def art_svg(grid, x0, y0, mode):
         for ch, rgb in row:
             color = None if ch == " " else tone(rgb, mode)
             if ch == " " and cur_color is not None:
-                color = cur_color          # let spaces ride along with the current span
+                color = cur_color
             if color != cur_color and buf:
                 spans.append((cur_color, buf))
                 buf = ""
@@ -91,18 +110,45 @@ def art_svg(grid, x0, y0, mode):
     return "\n".join(out)
 
 
+def info_svg(x0, y0, t):
+    out = [f'<g font-size="{INFO_FS}">']
+    for i, item in enumerate(INFO):
+        if item is None:
+            continue
+        if isinstance(item, str):
+            title = item[2:]
+            lead = "" if i == 0 else "— "
+            rule = "—" * (INFO_COLS - len(lead + title) - 1)
+            body = (f'<tspan fill="{t["head"]}">{escape(lead + title)}</tspan>'
+                    f'<tspan fill="{t["muted"]}"> {rule}</tspan>')
+        else:
+            k, v = item
+            dots = INFO_COLS - len(k) - len(v) - 3
+            assert dots >= 2, f"INFO row too long: {k}"
+            body = (f'<tspan fill="{t["key"]}">{escape(k)}:</tspan>'
+                    f'<tspan fill="{t["muted"]}"> {"." * dots} </tspan>'
+                    f'<tspan fill="{t["fg"]}">{escape(v)}</tspan>')
+        y = y0 + (i + 1) * INFO_LH
+        out.append(f'<text x="{x0}" y="{y:.1f}" textLength="{INFO_COLS * INFO_CW:.1f}" '
+                   f'lengthAdjust="spacingAndGlyphs">{body}</text>')
+    out.append("</g>")
+    return "\n".join(out)
+
+
 def build(image_path, mode):
     t = THEMES[mode]
     grid = wave_cells(image_path, ART_COLS)
     art_w, art_h = ART_COLS * ART_CW, len(grid) * ART_LH
-    W = PAD + art_w + PAD
-    H = PAD + art_h + PAD
+    info_w, info_h = INFO_COLS * INFO_CW, len(INFO) * INFO_LH + 6
+    W = PAD + art_w + GAP + info_w + PAD
+    H = PAD + max(art_h, info_h) + PAD
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{W:.0f}" height="{H:.0f}" viewBox="0 0 {W:.0f} {H:.0f}" font-family="{FONT}" role="img" xml:space="preserve">
-<title>The Great Wave off Kanagawa</title>
+<title>bdauria1: The Great Wave in ASCII beside a terminal-style profile</title>
 <style>text {{ white-space: pre; }}</style>
 <rect x="0.5" y="0.5" width="{W - 1:.0f}" height="{H - 1:.0f}" rx="10" fill="{t['card']}" stroke="{t['border']}"/>
-{art_svg(grid, PAD, PAD, mode)}
+{art_svg(grid, PAD, (H - art_h) / 2, mode)}
+{info_svg(PAD + art_w + GAP, (H - info_h) / 2, t)}
 </svg>
 """
 
