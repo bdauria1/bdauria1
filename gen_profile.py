@@ -8,8 +8,10 @@ from PIL import Image, ImageFilter
 
 FONT = "'Cascadia Code','SFMono-Regular',Consolas,'DejaVu Sans Mono','Liberation Mono',Menlo,monospace"
 PAD = 26
-ART_COLS, ART_FS, ART_CW, ART_LH = 84, 8, 4.8, 9.0
-INFO_COLS, INFO_FS, INFO_CW, INFO_LH = 50, 13, 7.8, 21.0
+ART_COLS, ART_FS, ART_CW, ART_LH = 130, 6.2, 3.7, 7.0
+CAPTION = "The Great Wave off Kanagawa — Katsushika Hokusai, c. 1831"
+CAP_FS, CAP_GAP = 11, 22
+INFO_COLS, INFO_FS, INFO_CW, INFO_LH = 50, 12, 7.2, 19.0
 GAP = 34
 
 INFO = [
@@ -34,51 +36,61 @@ THEMES = {
     "light": dict(card="#f6f8fa", border="#d0d7de", fg="#1f2328", muted="#8c959f", key="#bc4c00", head="#0969da"),
 }
 
-RAMP = " .:-=+*#%@"
+RAMP = " .:;+*x#%@"
 
-def wave_cells(path, cols, crop=(0.008, 0.01, 0.992, 0.99), char_aspect=ART_CW / ART_LH,
-               blur=1.0, gamma=0.6):
+
+def wave_cells(path, cols, crop=(0.006, 0.06, 0.994, 0.985), char_aspect=ART_CW / ART_LH):
     img = Image.open(path).convert("RGB")
     w, h = img.size
+    img.paste(img.getpixel((int(0.15 * w), int(0.04 * h))), (0, 0, int(0.12 * w), int(0.32 * h)))
     l, t, r, b = crop
     img = img.crop((int(l * w), int(t * h), int(r * w), int(b * h)))
     rows = round(cols * img.size[1] / img.size[0] * char_aspect)
-    img = img.filter(ImageFilter.GaussianBlur(blur)).resize((cols, rows), Image.BOX)
+    img = img.filter(ImageFilter.GaussianBlur(0.8)).resize((cols, rows), Image.BOX)
     a = np.asarray(img).astype(float)
     R, G, B = a[..., 0], a[..., 1], a[..., 2]
     L = 0.299 * R + 0.587 * G + 0.114 * B
-    blue = np.clip((B - R + 5) / 75, 0, 1)
-    foam = np.clip((L - 198) / 18, 0, 1)
     mx, mn = a.max(axis=2), a.min(axis=2)
     sat = (mx - mn) / np.maximum(mx, 1)
-    boat = np.clip((sat - 0.33) / 0.15, 0, 1) * (R > B) * 0.55
-    f = np.clip(np.maximum.reduce([blue, foam, boat]), 0, 1) ** gamma
+    blue = np.clip((B - R + 5) / 70, 0, 1)
+    foam = np.clip((L - 196) / 22, 0, 1)
+    boat = np.clip((sat - 0.33) / 0.15, 0, 1) * (R > B) * 0.6
+    sky = 0.3 * np.clip((165 - L) / 60, 0, 1)
+    f = np.clip(np.maximum.reduce([blue, foam, boat, sky]), 0, 1) ** 0.6
 
     grid = []
     for y in range(rows):
         row = []
         for x in range(cols):
             ch = RAMP[min(len(RAMP) - 1, int(f[y, x] * len(RAMP)))]
-            q = tuple(int(c) // 20 * 20 + 10 for c in a[y, x])
-            row.append((ch, q))
+            q = tuple(int(c) // 16 * 16 + 8 for c in a[y, x])
+            row.append((ch, q, round(f[y, x], 1)))
         while row and row[-1][0] == " ":
             row.pop()
         grid.append(row)
     return grid
 
-def tone(rgb, mode):
+
+def hexrgb(h):
+    return [int(h[i:i + 2], 16) for i in (1, 3, 5)]
+
+
+def tone(rgb, ink, mode):
     h, s, v = colorsys.rgb_to_hsv(*(min(c, 255) / 255 for c in rgb))
     if mode == "dark":
         v = max(v, 0.62)
-        if s < 0.25:
-            v = max(v, 0.9)
+        if s < 0.22:
+            s, v = s * 0.7, max(v, 0.92)
     else:
-        if s < 0.25:
-            s, v = 0.18, 0.55
+        if s < 0.22:
+            s, v = 0.25, 0.5
         else:
-            s, v = max(s, 0.35), min(v, 0.62)
-    r, g, b = colorsys.hsv_to_rgb(h, s, v)
-    return "#%02x%02x%02x" % (round(r * 255), round(g * 255), round(b * 255))
+            s, v = max(s, 0.45), min(v, 0.6)
+    fg = [c * 255 for c in colorsys.hsv_to_rgb(h, s, v)]
+    bg = hexrgb(THEMES[mode]["card"])
+    lo = 0.3 if mode == "dark" else 0.55
+    k = lo + (1 - lo) * min(1, ink * 1.4)
+    return "#%02x%02x%02x" % tuple(round(bg[i] + (fg[i] - bg[i]) * k) for i in range(3))
 
 
 def art_svg(grid, x0, y0, mode):
@@ -87,8 +99,8 @@ def art_svg(grid, x0, y0, mode):
         if not row:
             continue
         spans, cur_color, buf = [], None, ""
-        for ch, rgb in row:
-            color = None if ch == " " else tone(rgb, mode)
+        for ch, rgb, ink in row:
+            color = None if ch == " " else tone(rgb, ink, mode)
             if ch == " " and cur_color is not None:
                 color = cur_color
             if color != cur_color and buf:
@@ -138,16 +150,17 @@ def info_svg(x0, y0, t):
 def build(image_path, mode):
     t = THEMES[mode]
     grid = wave_cells(image_path, ART_COLS)
-    art_w, art_h = ART_COLS * ART_CW, len(grid) * ART_LH
+    art_w, art_h = ART_COLS * ART_CW, len(grid) * ART_LH + CAP_GAP
     info_w, info_h = INFO_COLS * INFO_CW, len(INFO) * INFO_LH + 6
     W = PAD + art_w + GAP + info_w + PAD
     H = PAD + max(art_h, info_h) + PAD
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{W:.0f}" height="{H:.0f}" viewBox="0 0 {W:.0f} {H:.0f}" font-family="{FONT}" role="img" xml:space="preserve">
-<title>bdauria1: The Great Wave in ASCII beside a terminal-style profile</title>
+<title>bdauria1: Hokusai's The Great Wave off Kanagawa in ASCII beside a terminal-style profile</title>
 <style>text {{ white-space: pre; }}</style>
 <rect x="0.5" y="0.5" width="{W - 1:.0f}" height="{H - 1:.0f}" rx="10" fill="{t['card']}" stroke="{t['border']}"/>
 {art_svg(grid, PAD, (H - art_h) / 2, mode)}
+<text x="{PAD + art_w / 2:.1f}" y="{(H + art_h) / 2:.1f}" text-anchor="middle" font-size="{CAP_FS}" font-style="italic" fill="{t['muted']}">{escape(CAPTION)}</text>
 {info_svg(PAD + art_w + GAP, (H - info_h) / 2, t)}
 </svg>
 """
